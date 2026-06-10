@@ -1182,11 +1182,13 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
           h += sin((p.y * 0.9 - p.x * 0.3) * 0.105 + t * 1.25) * 0.18;
           h += vnoise(p * 0.11 + vec2(t * 0.16, -t * 0.12)) * 0.6;
           h += vnoise(p * 0.42 + vec2(-t * 0.28, t * 0.2)) * 0.24;
+          h += vnoise(p * 0.95 + vec2(t * 0.5, t * 0.38)) * 0.12; // 細かいさざ波
+          h += vnoise(p * 2.1 + vec2(-t * 0.7, t * 0.55)) * 0.05; // さらに細かい波面ファセット
           return h * uWaveAmp;
         }
         void main() {
           vec2 p = vec2(vWorld.x, vWorld.z - uScroll);
-          float eps = 0.9;
+          float eps = 0.22; // 最細オクターブ (波長~0.5) を法線が拾えるよう差分幅は波長の半分未満にする
           float h0 = waveHeight(p);
           float hx = waveHeight(p + vec2(eps, 0.0));
           float hz = waveHeight(p + vec2(0.0, eps));
@@ -1195,15 +1197,20 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
           float fresnel = pow(1.0 - clamp(dot(viewDir, normal), 0.0, 1.0), 3.0);
           fresnel = clamp(fresnel, 0.05, 1.0);
           vec3 skyReflect = mix(uZenithColor, uHorizonColor, pow(fresnel, 0.7));
-          float depthMix = vnoise(p * 0.02) * 0.55;
+          // 深浅の混色は控えめな高めの周波数に留める。低周波で強く混ぜると
+          // 月の光道の中に巨大な暗い染みが浮き出てしまう。
+          float depthMix = vnoise(p * 0.06) * 0.25;
           vec3 waterBody = mix(uDeepColor, uShallowColor, depthMix);
           vec3 col = mix(waterBody, skyReflect, fresnel * 0.85);
           vec3 reflectDir = reflect(-viewDir, normal);
           vec3 moonDir = normalize(uMoonPos - vWorld);
           float moonAlign = max(dot(reflectDir, moonDir), 0.0);
-          float spec = pow(moonAlign, 240.0);
-          float glitter = pow(moonAlign, 26.0) * (0.3 + 0.7 * vnoise(p * 1.6 + vec2(uTime * 1.3, -uTime)));
-          col += uMoonColor * (spec * 1.7 + glitter * 0.38);
+          // 月の煌めきは貼り付けたノイズではなく波の法線そのものから出す。
+          // 波面のファセットがたまたま月を正反射した画素だけが鋭く光るので、
+          // 近距離では点の煌めき、遠距離では自然な光の道にまとまる。
+          float spec = pow(moonAlign, 600.0) * 2.6;
+          float sheen = pow(moonAlign, 28.0) * 0.06; // 光道のごく薄い下地
+          col += uMoonColor * (spec + sheen);
           float dist = length(cameraPosition - vWorld);
           float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
           col = mix(col, uFogColor, fogFactor * 0.65);
