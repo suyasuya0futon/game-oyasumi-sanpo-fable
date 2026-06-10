@@ -900,9 +900,45 @@
 
 const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     const forestSnowPalette = [0xdfe6e2, 0xe6ece8, 0xd4dcd7, 0xeef2f0, 0xc9d2cc];
-    const forestMats = forestPalette.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, metalness: 0, envMapIntensity: 0.35, transparent: true, opacity: 0.92, depthWrite: false }));
+    const forestMats = forestPalette.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, metalness: 0, envMapIntensity: 0.35, transparent: true, opacity: 0.92, depthWrite: false, vertexColors: true }));
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4c3a2a, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.92, depthWrite: false });
     const trunkGeo = new THREE.CylinderGeometry(0.1, 0.18, 1.4, 6);
+
+    // 複数ジオメトリを1つの BufferGeometry に結合する (ドローコール削減のため)。
+    // position/normal/uv (+全入力が持つ場合のみ color) を連結し、インデックスをオフセットする。
+    function mergeGeometries(geometries) {
+      const hasColor = geometries.every((g) => g.attributes.color);
+      let vTotal = 0;
+      let iTotal = 0;
+      for (const g of geometries) {
+        vTotal += g.attributes.position.count;
+        iTotal += g.index.count;
+      }
+      const pos = new Float32Array(vTotal * 3);
+      const nor = new Float32Array(vTotal * 3);
+      const uv = new Float32Array(vTotal * 2);
+      const col = hasColor ? new Float32Array(vTotal * 3) : null;
+      const idx = new Uint32Array(iTotal);
+      let vo = 0;
+      let io = 0;
+      for (const g of geometries) {
+        pos.set(g.attributes.position.array, vo * 3);
+        nor.set(g.attributes.normal.array, vo * 3);
+        uv.set(g.attributes.uv.array, vo * 2);
+        if (col) col.set(g.attributes.color.array, vo * 3);
+        const gi = g.index.array;
+        for (let i = 0; i < gi.length; i += 1) idx[io + i] = gi[i] + vo;
+        io += gi.length;
+        vo += g.attributes.position.count;
+      }
+      const merged = new THREE.BufferGeometry();
+      merged.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      merged.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+      merged.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+      if (col) merged.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      merged.setIndex(new THREE.BufferAttribute(idx, 1));
+      return merged;
+    }
     // 頂点を位置ハッシュで揺らして、幾何学的なコーン/球を有機的な樹形に崩す。
     // 同一位置の重複頂点 (UVシーム) は同じ量だけ動くので、面の割れは起きない。
     function roughenGeometry(geo, amount) {
@@ -920,33 +956,84 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       geo.computeVertexNormals();
       return geo;
     }
-    const coneGeoA = roughenGeometry(new THREE.ConeGeometry(1.0, 3.6, 9, 4), 0.11);
-    const coneGeoB = roughenGeometry(new THREE.ConeGeometry(0.7, 4.6, 8, 4), 0.08);
-    const canopyGeo = roughenGeometry(new THREE.SphereGeometry(1.1, 10, 8), 0.14);
+    // 葉群の頂点カラー: 下層ほど暗く (擬似AO)、わずかな明度ジッターで単色のっぺりを消す。
+    // 色相はマテリアル側 (forestMats) が持つので、雪モードの色差し替えはそのまま機能する。
+    function bakeFoliageColors(geo) {
+      geo.computeBoundingBox();
+      const minY = geo.boundingBox.min.y;
+      const maxY = geo.boundingBox.max.y;
+      const pos = geo.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i += 1) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+        const t = (y - minY) / Math.max(1e-6, maxY - minY);
+        const h1 = Math.sin(x * 91.7 + y * 47.3 + z * 73.1) * 14375.5453;
+        const jitter = ((h1 - Math.floor(h1)) - 0.5) * 0.16;
+        const b = THREE.MathUtils.clamp(0.5 + t * 0.55 + jitter, 0.35, 1.1);
+        colors[i * 3] = b;
+        colors[i * 3 + 1] = b;
+        colors[i * 3 + 2] = b;
+      }
+      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      return geo;
+    }
+    // 多段の円錐を重ねたモミの木型シルエット。単一円錐の「記号」感をなくす。
+    function buildFirFoliage(tiers, rough) {
+      const parts = tiers.map(([r, h, y]) => {
+        const cone = roughenGeometry(new THREE.ConeGeometry(r, h, 9, 3), rough);
+        cone.translate(0, y, 0);
+        return cone;
+      });
+      return bakeFoliageColors(mergeGeometries(parts));
+    }
+    function buildBroadleafFoliage() {
+      const parts = [
+        [0.95, 0.25, 0.05, 0],
+        [0.8, -0.4, -0.3, 0.2],
+        [0.75, 0.05, 0.6, -0.15],
+        [0.7, -0.1, -0.05, -0.45]
+      ].map(([r, x, y, z]) => {
+        const blob = roughenGeometry(new THREE.SphereGeometry(r, 9, 7), 0.13);
+        blob.translate(x, y, z);
+        return blob;
+      });
+      return bakeFoliageColors(mergeGeometries(parts));
+    }
+    // 各アーキタイプは従来の単一円錐/球と同じ高さ・幅に収め、当たり判定を変えない。
+    const firA = buildFirFoliage([[1.3, 1.9, -0.85], [1.0, 1.7, 0.15], [0.62, 1.5, 1.05]], 0.09);
+    const firB = buildFirFoliage([[0.95, 1.7, -1.45], [0.78, 1.6, -0.45], [0.6, 1.5, 0.5], [0.42, 1.5, 1.55]], 0.07);
+    const broadleafGeo = buildBroadleafFoliage();
+    // 木は色パレットごとに全本まとめて1メッシュに結合する (160本×2メッシュ → 6メッシュ)。
+    // 当たり判定は描画されない軽量アンカー (Object3D) が従来と同じ position/halfSize を持つ。
+    const forestBuckets = forestMats.map(() => []);
+    const trunkBucket = [];
+    const treeMatrix = new THREE.Matrix4();
+    const treePos = new THREE.Vector3();
+    const treeQuat = new THREE.Quaternion();
+    const treeEuler = new THREE.Euler();
+    const treeScaleV = new THREE.Vector3();
     function placeTree(x, z) {
       const variant = Math.random();
-      const mat = forestMats[Math.floor(Math.random() * forestMats.length)];
-      let foliage;
-      if (variant < 0.55) {
-        foliage = new THREE.Mesh(coneGeoA, mat);
-      } else if (variant < 0.85) {
-        foliage = new THREE.Mesh(coneGeoB, mat);
-      } else {
-        foliage = new THREE.Mesh(canopyGeo, mat);
-      }
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = -1.25;
-      tree.add(trunk, foliage);
-      tree.position.set(x, 1.8, z);
+      const paletteIdx = Math.floor(Math.random() * forestMats.length);
+      const archetype = variant < 0.55 ? firA : variant < 0.85 ? firB : broadleafGeo;
       const treeScale = 1.0 + Math.random() * 1.6;
-      tree.scale.setScalar(treeScale);
-      tree.rotation.y = Math.random() * Math.PI * 2;
-      tree.userData.obstacle = true;
-      tree.userData.crashMessage = "木に衝突しました。";
-      tree.userData.halfSize = { x: 0.55 * treeScale, y: 2.0 * treeScale, z: 0.55 * treeScale };
-      ground.add(tree);
-      obstacles.push(tree);
+      treeEuler.set(0, Math.random() * Math.PI * 2, 0);
+      treeQuat.setFromEuler(treeEuler);
+      treeScaleV.setScalar(treeScale);
+      treeMatrix.compose(treePos.set(x, 1.8, z), treeQuat, treeScaleV);
+      forestBuckets[paletteIdx].push(archetype.clone().applyMatrix4(treeMatrix));
+      const trunk = trunkGeo.clone();
+      trunk.translate(0, -1.25, 0);
+      trunk.applyMatrix4(treeMatrix);
+      trunkBucket.push(trunk);
+      const anchor = new THREE.Object3D();
+      anchor.position.set(x, 1.8, z);
+      anchor.userData.obstacle = true;
+      anchor.userData.crashMessage = "木に衝突しました。";
+      anchor.userData.halfSize = { x: 0.55 * treeScale, y: 2.0 * treeScale, z: 0.55 * treeScale };
+      obstacles.push(anchor);
     }
     const forestCarpet = new THREE.Mesh(
       new THREE.CircleGeometry(54, 48),
@@ -960,12 +1047,150 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     for (let i = 0; i < 160; i += 1) {
       placeTree(-104 + Math.random() * 92, -56 + Math.random() * 102);
     }
+    forestBuckets.forEach((bucket, i) => {
+      if (bucket.length) ground.add(new THREE.Mesh(mergeGeometries(bucket), forestMats[i]));
+    });
+    ground.add(new THREE.Mesh(mergeGeometries(trunkBucket), trunkMat));
 
     const cityPalette = [0x26304e, 0x2f3a5c, 0x1d2540, 0x363f63, 0x222b48];
     const citySnowPalette = [0xd8dde8, 0xe2e6ef, 0xccd2de, 0xeaeef5, 0xc6cdda];
     const cityMats = cityPalette.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.62, metalness: 0.3, envMapIntensity: 0.55, transparent: true, opacity: 0.92, depthWrite: false }));
     const windowMat = new THREE.MeshBasicMaterial({ color: 0xffd98c, transparent: true, opacity: 0.92, depthWrite: false, blending: THREE.AdditiveBlending });
     const windowGeo = new THREE.PlaneGeometry(0.28, 0.34);
+
+    // ビルのファサード (壁 + 窓) をテクスチャに焼く。窓1枚ずつの板ポリ (数百ドローコール) を
+    // 置き換えるので描画負荷はむしろ下がる。map はグレースケールで material.color に着色され
+    // (雪モード対応)、点灯窓だけ emissiveMap で暖色に光る。消灯窓が混ざるのがビルらしさの鍵。
+    // テクスチャの v=0〜0.94 が壁面、v≈0.975 付近は屋根/屋上設備用の無地領域。
+    const FACADE_PLAIN_V = 0.975;
+    function createFacadeTextures(w, h) {
+      const cols = Math.max(2, Math.floor(w / 0.9));
+      const rows = Math.max(2, Math.floor(h / 1.1));
+      const cw = 64;
+      const ch = 160;
+      const wallTop = Math.ceil(ch * 0.06); // canvas上端 (v=1側) は無地ストリップ
+      const mapCv = document.createElement("canvas");
+      mapCv.width = cw;
+      mapCv.height = ch;
+      const mctx = mapCv.getContext("2d");
+      const emiCv = document.createElement("canvas");
+      emiCv.width = cw;
+      emiCv.height = ch;
+      const ectx = emiCv.getContext("2d");
+      ectx.fillStyle = "#000000";
+      ectx.fillRect(0, 0, cw, ch);
+      // 壁: 下層ほど暗い縦グラデ (擬似AO)。無地ストリップも同系の中間グレー。
+      const wall = mctx.createLinearGradient(0, wallTop, 0, ch);
+      wall.addColorStop(0, "#b4b4b4");
+      wall.addColorStop(1, "#5c5c5c");
+      mctx.fillStyle = wall;
+      mctx.fillRect(0, 0, cw, ch);
+      mctx.fillStyle = "#9a9a9a";
+      mctx.fillRect(0, 0, cw, wallTop);
+      const cellW = cw / cols;
+      const cellH = (ch - wallTop) / rows;
+      const mx = cellW * 0.22;
+      const my = cellH * 0.26;
+      for (let cx = 0; cx < cols; cx += 1) {
+        for (let ry = 0; ry < rows; ry += 1) {
+          const px = cx * cellW + mx;
+          const py = wallTop + ry * cellH + my;
+          const pw = cellW - mx * 2;
+          const ph = cellH - my * 2;
+          if (Math.random() < 0.45) {
+            mctx.fillStyle = "#2e2e2e"; // 消灯窓: 壁より暗いガラス
+            mctx.fillRect(px, py, pw, ph);
+          } else {
+            mctx.fillStyle = "#d8d8d8";
+            mctx.fillRect(px, py, pw, ph);
+            ectx.fillStyle = `rgba(255,255,255,${0.55 + Math.random() * 0.45})`;
+            ectx.fillRect(px, py, pw, ph);
+          }
+        }
+      }
+      const map = new THREE.CanvasTexture(mapCv);
+      map.colorSpace = THREE.SRGBColorSpace;
+      const emissiveMap = new THREE.CanvasTexture(emiCv);
+      emissiveMap.colorSpace = THREE.SRGBColorSpace;
+      return { map, emissiveMap };
+    }
+    const cityBuildingMats = []; // 雪モードの色差し替え用 (テクスチャ付きビルは個別マテリアル)
+    function createBuildingMaterial(w, h, paletteIdx) {
+      const { map, emissiveMap } = createFacadeTextures(w, h);
+      const mat = new THREE.MeshStandardMaterial({
+        color: cityPalette[paletteIdx],
+        map,
+        emissiveMap,
+        emissive: 0xffd98c,
+        emissiveIntensity: 1.0,
+        roughness: 0.62,
+        metalness: 0.3,
+        envMapIntensity: 0.55,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false
+      });
+      cityBuildingMats.push({ mat, paletteIdx });
+      return mat;
+    }
+    // BoxGeometry の側面UVを v0〜v1 に割り当て、上下面は無地領域に逃がす。
+    // BoxGeometry(1セグメント) は面ごとに4頂点で +x,-x,+y,-y,+z,-z の順。
+    function remapBoxSideUV(geo, v0, v1) {
+      const uvAttr = geo.attributes.uv;
+      for (let i = 0; i < uvAttr.count; i += 1) {
+        const face = Math.floor(i / 4);
+        if (face === 2 || face === 3) uvAttr.setXY(i, 0.5, FACADE_PLAIN_V);
+        else uvAttr.setXY(i, uvAttr.getX(i), v0 + uvAttr.getY(i) * (v1 - v0));
+      }
+      return geo;
+    }
+    function remapBoxPlainUV(geo) {
+      const uvAttr = geo.attributes.uv;
+      for (let i = 0; i < uvAttr.count; i += 1) uvAttr.setXY(i, 0.5, FACADE_PLAIN_V);
+      return geo;
+    }
+    // 本体 + (確率で)低層部 + 屋上設備を1ジオメトリに結合した「建築」のシルエットを作る。
+    // 当たり判定は従来通り本体ボックスのまま (低層部・設備ぶんは当たらない=甘めで安全側)。
+    function createTowerGeometry(w, h, d) {
+      const parts = [remapBoxSideUV(new THREE.BoxGeometry(w, h, d), 0, 0.94)];
+      if (h > 6 && Math.random() < 0.45) {
+        const ph = h * 0.18;
+        const pod = remapBoxSideUV(new THREE.BoxGeometry(w + 1.1, ph, d + 1.1), 0, 0.94 * 0.18);
+        pod.translate(0, -h / 2 + ph / 2, 0);
+        parts.push(pod);
+      }
+      const equipCount = 1 + Math.floor(Math.random() * 2);
+      for (let e = 0; e < equipCount; e += 1) {
+        const ew = 0.5 + Math.random() * Math.min(1.4, w * 0.4);
+        const eh = 0.3 + Math.random() * 0.7;
+        const ed = 0.5 + Math.random() * Math.min(1.4, d * 0.4);
+        const eq = remapBoxPlainUV(new THREE.BoxGeometry(ew, eh, ed));
+        eq.translate(
+          (Math.random() - 0.5) * (w - ew) * 0.8,
+          h / 2 + eh / 2,
+          (Math.random() - 0.5) * (d - ed) * 0.8
+        );
+        parts.push(eq);
+      }
+      return mergeGeometries(parts);
+    }
+    // ビル足元の接地AO (柔らかい暗がり)。全ビル分を1メッシュに結合する。
+    const buildingAoTexture = (() => {
+      const size = 64;
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = size;
+      const ctx = cv.getContext("2d");
+      const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      grad.addColorStop(0, "#ffffff");
+      grad.addColorStop(0.45, "#b0b0b0");
+      grad.addColorStop(1, "#000000");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, size, size);
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.NoColorSpace;
+      return tex;
+    })();
+    const buildingAoQuads = [];
     const cityPlaza = new THREE.Mesh(
       new THREE.CircleGeometry(34, 36),
       new THREE.MeshStandardMaterial({ color: 0x141a2c, map: terrainTexture, roughness: 0.78, metalness: 0.08, envMapIntensity: 0.4, transparent: true, opacity: 0.78, depthWrite: false })
@@ -980,9 +1205,14 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       const w = isSpire ? 1.6 + Math.random() * 1.4 : 2.5 + Math.random() * 4;
       const d = isSpire ? w : 2.5 + Math.random() * 4;
       const h = isSpire ? 10 + Math.random() * 14 : 3 + Math.random() * 10;
-      const mat = cityMats[Math.floor(Math.random() * cityMats.length)];
-      const geo = isSpire ? new THREE.CylinderGeometry(w * 0.5, w * 0.6, h, 8) : new THREE.BoxGeometry(w, h, d);
-      const building = new THREE.Mesh(geo, mat);
+      let building;
+      if (isSpire) {
+        const mat = cityMats[Math.floor(Math.random() * cityMats.length)];
+        building = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.5, w * 0.6, h, 8), mat);
+      } else {
+        const paletteIdx = Math.floor(Math.random() * cityPalette.length);
+        building = new THREE.Mesh(createTowerGeometry(w, h, d), createBuildingMaterial(w, h, paletteIdx));
+      }
       // 内側端を x=14 に寄せ、リング(中心 x≤10・半径7)のど真ん中を通れば必ずセーフにする。
       // それでもビルはリング右側の穴の中に残るので、右に寄って抜けると建物に当たる。
       building.position.set(14 + Math.random() * 42, h / 2, -44 + Math.random() * 56);
@@ -992,29 +1222,21 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       ground.add(building);
       obstacles.push(building);
 
-      if (!isSpire) {
-        const cols = Math.max(2, Math.floor(w / 0.9));
-        const rows = Math.max(2, Math.floor(h / 1.1));
-        const stepX = w / (cols + 1);
-        const stepY = h / (rows + 1);
-        for (let cx = 0; cx < cols; cx += 1) {
-          for (let ry = 0; ry < rows; ry += 1) {
-            if (Math.random() < 0.45) continue;
-            const win = new THREE.Mesh(windowGeo, windowMat);
-            win.position.set(
-              building.position.x - w / 2 + stepX * (cx + 1),
-              stepY * (ry + 1),
-              building.position.z + d / 2 + 0.02
-            );
-            ground.add(win);
-          }
-        }
-      } else {
+      if (isSpire) {
         const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), windowMat);
         beacon.position.set(building.position.x, h + 0.2, building.position.z);
         ground.add(beacon);
       }
+      const ao = new THREE.PlaneGeometry(w + 2.6, d + 2.6);
+      ao.rotateX(-Math.PI / 2);
+      ao.translate(building.position.x, 0.135, building.position.z);
+      buildingAoQuads.push(ao);
     }
+    const cityAo = new THREE.Mesh(
+      mergeGeometries(buildingAoQuads),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, alphaMap: buildingAoTexture })
+    );
+    ground.add(cityAo);
 
     const SNOW_LAND_COLOR = 0xeaf0ed;
     const SNOW_FOREST_CARPET_COLOR = 0xdde4e0;
@@ -1029,6 +1251,9 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       }
       for (let i = 0; i < cityMats.length; i += 1) {
         cityMats[i].color.setHex(enabled ? citySnowPalette[i] : cityPalette[i]);
+      }
+      for (const entry of cityBuildingMats) {
+        entry.mat.color.setHex(enabled ? citySnowPalette[entry.paletteIdx] : cityPalette[entry.paletteIdx]);
       }
       land.material.color.setHex(enabled ? SNOW_LAND_COLOR : normalLandHex);
       forestCarpet.material.color.setHex(enabled ? SNOW_FOREST_CARPET_COLOR : normalForestCarpetHex);
