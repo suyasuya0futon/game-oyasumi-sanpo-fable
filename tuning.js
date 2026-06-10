@@ -155,7 +155,7 @@ export const RING_BURST_LIFE_BASE = 0.5; // 火花の基本寿命。
 export const RING_BURST_LIFE_RANDOM = 0.35; // 火花の寿命のばらつき。
 
 // 海面（島々の下に広がる水）
-export const WATER_LEVEL_Y = -36.9; // 海面の高さ。島 (y=-36) のすぐ下に置き、島が海に浮かんで見えるようにする。
+export const WATER_LEVEL_Y = -39.5; // 海面の高さ。島 (y=-36) より数ユニット下げ、岸壁と合わせて「海に立つ島」に見せる。
 export const WATER_DEEP_COLOR = 0x0a1626; // 通常時の深い水の色。
 export const WATER_SHALLOW_COLOR = 0x16344a; // 通常時の浅い/明るい水の色。深い色とノイズで混ざる。
 export const WATER_DEEP_COLOR_SNOW = 0x8fa8b8; // 雪ループ時の深い水の色（凍った海のイメージ）。

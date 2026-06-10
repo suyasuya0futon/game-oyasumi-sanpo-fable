@@ -1516,7 +1516,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     const water = new THREE.Mesh(new THREE.PlaneGeometry(4000, 2400), waterMaterial);
     water.rotation.x = -Math.PI / 2;
     water.position.set(0, tuning.WATER_LEVEL_Y, -600);
-    water.renderOrder = -2; // 透明パスの最初に描き、島や雲が上に重なるようにする。
+    water.renderOrder = -3; // 透明パスの最初に描き、島や雲が上に重なるようにする。
     scene.add(water);
 
     const waterColorTmp = new THREE.Color();
