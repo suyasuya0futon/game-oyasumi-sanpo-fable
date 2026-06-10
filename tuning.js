@@ -154,6 +154,17 @@ export const RING_BURST_UPWARD_SPEED = 0.7; // 火花を少し上向きへ散ら
 export const RING_BURST_LIFE_BASE = 0.5; // 火花の基本寿命。
 export const RING_BURST_LIFE_RANDOM = 0.35; // 火花の寿命のばらつき。
 
+// 海面（島々の下に広がる水）
+export const WATER_LEVEL_Y = -36.9; // 海面の高さ。島 (y=-36) のすぐ下に置き、島が海に浮かんで見えるようにする。
+export const WATER_DEEP_COLOR = 0x0a1626; // 通常時の深い水の色。
+export const WATER_SHALLOW_COLOR = 0x16344a; // 通常時の浅い/明るい水の色。深い色とノイズで混ざる。
+export const WATER_DEEP_COLOR_SNOW = 0x8fa8b8; // 雪ループ時の深い水の色（凍った海のイメージ）。
+export const WATER_SHALLOW_COLOR_SNOW = 0xb6c8d4; // 雪ループ時の浅い水の色。
+export const WATER_DEEP_COLOR_RED_MOON = 0x160a14; // 赤い月時の深い水の色。
+export const WATER_SHALLOW_COLOR_RED_MOON = 0x2c1430; // 赤い月時の浅い水の色。
+export const WATER_WAVE_AMP = 1.0; // 波の強さ。大きいほど水面が荒れる。
+export const WATER_WAVE_AMP_SNOW = 0.25; // 雪ループ時の波の強さ（凍ってほぼ静まる）。
+
 // 地面と島のループ/遠景フェード
 export const GROUND_WRAP_END_Z = 120; // この奥行きまで来たら島を奥へ戻して次のループに入る。
 export const GROUND_WRAP_DISTANCE = 520; // 地面/島がループする距離。大きいほど遠くから島が現れ、現れる頻度は下がる。

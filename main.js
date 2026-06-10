@@ -231,20 +231,58 @@
       const ctx = cloud.getContext("2d");
       ctx.clearRect(0, 0, cloud.width, cloud.height);
 
-      for (let i = 0; i < 18; i += 1) {
-        const x = 34 + Math.random() * 420;
-        const y = 54 + Math.random() * 72;
-        const rx = 42 + Math.random() * 82;
-        const ry = 18 + Math.random() * 24;
-        const glow = ctx.createRadialGradient(x, y, 0, x, y, rx);
-        glow.addColorStop(0, "rgba(255, 224, 202, 0.42)");
-        glow.addColorStop(0.5, "rgba(220, 180, 205, 0.22)");
-        glow.addColorStop(1, "rgba(220, 180, 205, 0)");
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-        ctx.fill();
+      // 塊 (クラスタ) 単位でパフを重ね、下面に影・上面に月光のハイライトを入れて立体感を出す。
+      const clusters = 4 + Math.floor(Math.random() * 3);
+      for (let c = 0; c < clusters; c += 1) {
+        const ccx = 80 + Math.random() * 360;
+        const ccy = 76 + Math.random() * 44;
+        const clusterR = 46 + Math.random() * 64;
+        const puffs = 6 + Math.floor(Math.random() * 6);
+        for (let i = 0; i < puffs; i += 1) {
+          const px = ccx + (Math.random() - 0.5) * clusterR * 1.7;
+          const py = ccy + (Math.random() - 0.5) * clusterR * 0.5;
+          const rx = 22 + Math.random() * 44;
+          const ry = rx * (0.42 + Math.random() * 0.2);
+          let g = ctx.createRadialGradient(px, py + ry * 0.55, 0, px, py + ry * 0.55, rx);
+          g.addColorStop(0, "rgba(128, 110, 156, 0.26)");
+          g.addColorStop(1, "rgba(128, 110, 156, 0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.ellipse(px, py + ry * 0.55, rx, ry, 0, 0, Math.PI * 2);
+          ctx.fill();
+          g = ctx.createRadialGradient(px, py, 0, px, py, rx);
+          g.addColorStop(0, "rgba(255, 226, 206, 0.46)");
+          g.addColorStop(0.6, "rgba(235, 194, 198, 0.24)");
+          g.addColorStop(1, "rgba(235, 194, 198, 0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2);
+          ctx.fill();
+          g = ctx.createRadialGradient(px, py - ry * 0.5, 0, px, py - ry * 0.5, rx * 0.7);
+          g.addColorStop(0, "rgba(255, 246, 228, 0.34)");
+          g.addColorStop(1, "rgba(255, 246, 228, 0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.ellipse(px, py - ry * 0.5, rx * 0.7, ry * 0.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
+
+      // パフがキャンバス端にはみ出すと縁がぶつっと直線で切れるので、
+      // 外周へ向かってアルファを落とす楕円マスクで必ず溶けるようにする。
+      ctx.globalCompositeOperation = "destination-in";
+      ctx.save();
+      ctx.scale(1, cloud.height / cloud.width);
+      const edgeMask = ctx.createRadialGradient(
+        cloud.width / 2, cloud.width / 2, 0,
+        cloud.width / 2, cloud.width / 2, cloud.width / 2
+      );
+      edgeMask.addColorStop(0.62, "rgba(0,0,0,1)");
+      edgeMask.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = edgeMask;
+      ctx.fillRect(0, 0, cloud.width, cloud.width);
+      ctx.restore();
+      ctx.globalCompositeOperation = "source-over";
 
       const texture = new THREE.CanvasTexture(cloud);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -304,6 +342,40 @@
       ctx.fillStyle = body;
       ctx.fillRect(0, 0, size, size);
 
+      // クレーター: 影の窪み + 光源側の縁のハイライトで立体感を出す。
+      for (let i = 0; i < 16; i += 1) {
+        const a = Math.random() * Math.PI * 2;
+        const dist = Math.sqrt(Math.random()) * r * 0.8;
+        const px = cx + Math.cos(a) * dist;
+        const py = cy + Math.sin(a) * dist;
+        const cr = r * (0.045 + Math.random() * 0.11);
+        const depth = 0.1 + Math.random() * 0.14;
+        const shade = ctx.createRadialGradient(px, py, cr * 0.15, px, py, cr);
+        shade.addColorStop(0, `rgba(40, 25, 30, ${depth})`);
+        shade.addColorStop(0.72, `rgba(40, 25, 30, ${depth * 0.55})`);
+        shade.addColorStop(1, "rgba(40, 25, 30, 0)");
+        ctx.fillStyle = shade;
+        ctx.beginPath();
+        ctx.arc(px, py, cr, 0, Math.PI * 2);
+        ctx.fill();
+        const rim = ctx.createRadialGradient(px - cr * 0.3, py - cr * 0.3, cr * 0.55, px - cr * 0.3, py - cr * 0.3, cr * 1.1);
+        rim.addColorStop(0, "rgba(255, 252, 235, 0)");
+        rim.addColorStop(0.82, `rgba(255, 252, 235, ${depth * 0.5})`);
+        rim.addColorStop(1, "rgba(255, 252, 235, 0)");
+        ctx.fillStyle = rim;
+        ctx.beginPath();
+        ctx.arc(px - cr * 0.3, py - cr * 0.3, cr * 1.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 周縁減光: 球体らしく外周をわずかに落とす。
+      const limb = ctx.createRadialGradient(cx - r * 0.28, cy - r * 0.28, r * 0.25, cx, cy, r);
+      limb.addColorStop(0, "rgba(0, 0, 0, 0)");
+      limb.addColorStop(0.75, "rgba(20, 8, 24, 0.06)");
+      limb.addColorStop(1, "rgba(20, 8, 24, 0.3)");
+      ctx.fillStyle = limb;
+      ctx.fillRect(0, 0, size, size);
+
       ctx.restore();
       const texture = new THREE.CanvasTexture(moon);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -354,6 +426,25 @@
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.95;
+
+    // 空のグラデーションをそのまま環境マップ化し、金属 (リング) や機体・ビルに
+    // 夕暮れ〜星空の反射光を与える。空の見た目が大きく変わった時だけ再生成する。
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    const skyEnvSource = skyTexture.clone();
+    skyEnvSource.mapping = THREE.EquirectangularReflectionMapping;
+    let skyEnvTarget = null;
+    let lastEnvHigh = -1;
+    let lastEnvSnow = -1;
+    function refreshEnvironment(high = 0, snowFactor = 0) {
+      skyEnvSource.needsUpdate = true;
+      const target = pmremGenerator.fromEquirectangular(skyEnvSource);
+      if (skyEnvTarget) skyEnvTarget.dispose();
+      skyEnvTarget = target;
+      scene.environment = target.texture;
+      lastEnvHigh = high;
+      lastEnvSnow = snowFactor;
+    }
+    refreshEnvironment();
 
     const clock = new THREE.Clock();
     const lowFogColor = new THREE.Color(0x253056);
@@ -572,6 +663,12 @@
     const ambient = new THREE.HemisphereLight(0xd7c6c5, 0x171f46, 1.45);
     scene.add(ambient);
 
+    // 太陽は奥 (-z) からの逆光なので、カメラ側の面が真っ黒に潰れないよう
+    // 月光相当の青いフィルライトを手前上方から弱く当てる。
+    const moonFill = new THREE.DirectionalLight(0x8fa3d6, 0.55);
+    moonFill.position.set(6, 18, 30);
+    scene.add(moonFill);
+
     const sun = new THREE.DirectionalLight(0xd88972, 1.2);
     sun.position.set(-10, 9, -18);
     sun.castShadow = true;
@@ -619,28 +716,60 @@
     moonGroup.position.set(-54, 116, -190);
     scene.add(moonGroup);
 
-    const starGeo = new THREE.BufferGeometry();
-    const starPositions = [];
-    for (let i = 0; i < 900; i += 1) {
-      starPositions.push(
-        (Math.random() - 0.5) * 260,
-        24 + Math.random() * 500,
-        -35 - Math.random() * 240
-      );
+    // 星: 四角い点ではなく柔らかい光点にし、暗い星の海 + 明るい星の2層で奥行きを出す。
+    const starTexture = (() => {
+      const size = 64;
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = size;
+      const ctx = cv.getContext("2d");
+      const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      // 鋭い点光 + ごく薄いハロ。コアを太らせると不自然になるので、
+      // 見えやすさはスプライトのサイズ・数・不透明度側で調整する。
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.22, "rgba(255,255,255,0.7)");
+      g.addColorStop(0.5, "rgba(255,255,255,0.14)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    })();
+    const STAR_TINTS = [0xffffff, 0xcfe2ff, 0xffeccf, 0xf6fbff];
+    function createStarField(count, size, opacity) {
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      const tint = new THREE.Color();
+      for (let i = 0; i < count; i += 1) {
+        positions[i * 3] = (Math.random() - 0.5) * 260;
+        positions[i * 3 + 1] = 24 + Math.random() * 500;
+        positions[i * 3 + 2] = -35 - Math.random() * 240;
+        tint.setHex(STAR_TINTS[Math.floor(Math.random() * STAR_TINTS.length)]);
+        colors[i * 3] = tint.r;
+        colors[i * 3 + 1] = tint.g;
+        colors[i * 3 + 2] = tint.b;
+      }
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({
+        map: starTexture,
+        vertexColors: true,
+        size,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        fog: false,
+        blending: THREE.AdditiveBlending
+      });
+      return new THREE.Points(geo, mat);
     }
-    starGeo.setAttribute("position", new THREE.Float32BufferAttribute(starPositions, 3));
-    const starMat = new THREE.PointsMaterial({
-      color: 0xf6fbff,
-      size: 0.24,
-      transparent: true,
-      opacity: 0.72,
-      depthWrite: false,
-      fog: false
-    });
-    const stars = new THREE.Points(
-      starGeo,
-      starMat
-    );
+    const starsSmall = createStarField(1100, 0.5, 0.72);
+    const starsBright = createStarField(180, 1.1, 0.85);
+    const starMat = starsSmall.material;
+    const starBrightMat = starsBright.material;
+    const stars = new THREE.Group();
+    stars.add(starsSmall, starsBright);
     scene.add(stars);
 
     for (let i = 0; i < 8; i += 1) {
@@ -683,9 +812,43 @@
       return tex;
     })();
 
+    // 地表のまだら模様 (草地や土の濃淡)。グレースケールで描き、material.color で着色する。
+    // 雪モードの色差し替え (setHex) がそのまま効くようにするため。
+    const terrainTexture = (() => {
+      const size = 512;
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = size;
+      const ctx = cv.getContext("2d");
+      ctx.fillStyle = "#c8c8c8";
+      ctx.fillRect(0, 0, size, size);
+      for (let i = 0; i < 480; i += 1) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const r = 6 + Math.random() * 42;
+        const bright = Math.random() < 0.5;
+        const alpha = 0.04 + Math.random() * 0.08;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, bright ? `rgba(255,255,255,${alpha})` : `rgba(40,40,40,${alpha})`);
+        g.addColorStop(1, "rgba(128,128,128,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 細かい粒状ノイズで質感を足す。
+      for (let i = 0; i < 5000; i += 1) {
+        const v = Math.random() < 0.5 ? 0 : 255;
+        ctx.fillStyle = `rgba(${v},${v},${v},${0.025 + Math.random() * 0.04})`;
+        ctx.fillRect(Math.random() * size, Math.random() * size, 1.5, 1.5);
+      }
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    })();
+
     const land = new THREE.Mesh(
       new THREE.CircleGeometry(80, 96),
-      new THREE.MeshBasicMaterial({ color: 0x1c3b33, transparent: true, opacity: 0.7, depthWrite: false, alphaMap: islandEdgeAlphaTex })
+      new THREE.MeshStandardMaterial({ color: 0x24493f, map: terrainTexture, roughness: 0.95, metalness: 0, envMapIntensity: 0.3, transparent: true, opacity: 0.78, depthWrite: false, alphaMap: islandEdgeAlphaTex })
     );
     land.rotation.x = -Math.PI / 2;
     land.scale.set(1.6, 0.95, 1);
@@ -695,21 +858,44 @@
 
 const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     const forestSnowPalette = [0xdfe6e2, 0xe6ece8, 0xd4dcd7, 0xeef2f0, 0xc9d2cc];
-    const forestMats = forestPalette.map((c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.78, depthWrite: false }));
-    const coneGeoA = new THREE.ConeGeometry(1.0, 3.6, 7);
-    const coneGeoB = new THREE.ConeGeometry(0.7, 4.6, 6);
-    const canopyGeo = new THREE.SphereGeometry(1.1, 9, 7);
+    const forestMats = forestPalette.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, metalness: 0, envMapIntensity: 0.35, transparent: true, opacity: 0.92, depthWrite: false }));
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4c3a2a, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.92, depthWrite: false });
+    const trunkGeo = new THREE.CylinderGeometry(0.1, 0.18, 1.4, 6);
+    // 頂点を位置ハッシュで揺らして、幾何学的なコーン/球を有機的な樹形に崩す。
+    // 同一位置の重複頂点 (UVシーム) は同じ量だけ動くので、面の割れは起きない。
+    function roughenGeometry(geo, amount) {
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i += 1) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+        const h1 = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+        const r1 = (h1 - Math.floor(h1)) - 0.5;
+        const h2 = Math.sin(x * 26.651 + y * 15.123 + z * 53.71) * 24634.6345;
+        const r2 = (h2 - Math.floor(h2)) - 0.5;
+        pos.setXYZ(i, x + r1 * amount, y + r2 * amount * 0.6, z + (r1 + r2) * 0.5 * amount);
+      }
+      geo.computeVertexNormals();
+      return geo;
+    }
+    const coneGeoA = roughenGeometry(new THREE.ConeGeometry(1.0, 3.6, 9, 4), 0.11);
+    const coneGeoB = roughenGeometry(new THREE.ConeGeometry(0.7, 4.6, 8, 4), 0.08);
+    const canopyGeo = roughenGeometry(new THREE.SphereGeometry(1.1, 10, 8), 0.14);
     function placeTree(x, z) {
       const variant = Math.random();
       const mat = forestMats[Math.floor(Math.random() * forestMats.length)];
-      let tree;
+      let foliage;
       if (variant < 0.55) {
-        tree = new THREE.Mesh(coneGeoA, mat);
+        foliage = new THREE.Mesh(coneGeoA, mat);
       } else if (variant < 0.85) {
-        tree = new THREE.Mesh(coneGeoB, mat);
+        foliage = new THREE.Mesh(coneGeoB, mat);
       } else {
-        tree = new THREE.Mesh(canopyGeo, mat);
+        foliage = new THREE.Mesh(canopyGeo, mat);
       }
+      const tree = new THREE.Group();
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = -1.25;
+      tree.add(trunk, foliage);
       tree.position.set(x, 1.8, z);
       const treeScale = 1.0 + Math.random() * 1.6;
       tree.scale.setScalar(treeScale);
@@ -722,7 +908,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     }
     const forestCarpet = new THREE.Mesh(
       new THREE.CircleGeometry(54, 48),
-      new THREE.MeshBasicMaterial({ color: 0x10261b, transparent: true, opacity: 0.55, depthWrite: false, alphaMap: islandEdgeAlphaTex })
+      new THREE.MeshStandardMaterial({ color: 0x142e21, map: terrainTexture, roughness: 0.95, metalness: 0, envMapIntensity: 0.3, transparent: true, opacity: 0.62, depthWrite: false, alphaMap: islandEdgeAlphaTex })
     );
     forestCarpet.rotation.x = -Math.PI / 2;
     forestCarpet.scale.set(1.6, 0.9, 1);
@@ -735,12 +921,12 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
 
     const cityPalette = [0x26304e, 0x2f3a5c, 0x1d2540, 0x363f63, 0x222b48];
     const citySnowPalette = [0xd8dde8, 0xe2e6ef, 0xccd2de, 0xeaeef5, 0xc6cdda];
-    const cityMats = cityPalette.map((c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.78, depthWrite: false }));
+    const cityMats = cityPalette.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.62, metalness: 0.3, envMapIntensity: 0.55, transparent: true, opacity: 0.92, depthWrite: false }));
     const windowMat = new THREE.MeshBasicMaterial({ color: 0xffd98c, transparent: true, opacity: 0.92, depthWrite: false, blending: THREE.AdditiveBlending });
     const windowGeo = new THREE.PlaneGeometry(0.28, 0.34);
     const cityPlaza = new THREE.Mesh(
       new THREE.CircleGeometry(34, 36),
-      new THREE.MeshBasicMaterial({ color: 0x141a2c, transparent: true, opacity: 0.7, depthWrite: false })
+      new THREE.MeshStandardMaterial({ color: 0x141a2c, map: terrainTexture, roughness: 0.78, metalness: 0.08, envMapIntensity: 0.4, transparent: true, opacity: 0.78, depthWrite: false })
     );
     cityPlaza.rotation.x = -Math.PI / 2;
     cityPlaza.scale.set(1.4, 1.0, 1);
@@ -813,6 +999,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       redMoonBaseSky = enabled;
       lastSkyHigh = -1;
       lastSnowSkyFactor = -1;
+      lastEnvHigh = -1; // 空のベース色が変わるので環境マップも作り直させる。
       moonDisk.material.map = enabled ? moonTextures.redDisk : moonTextures.normalDisk;
       moonGlow.material.map = enabled ? moonTextures.redGlow : moonTextures.normalGlow;
       moonDisk.material.needsUpdate = true;
@@ -845,10 +1032,13 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     const loopBuildingW = 6.6;
     const loopBuildingH = 12.6;
     const loopBuildingD = 3.2;
-    loopBuildingMaterial = new THREE.MeshBasicMaterial({
+    loopBuildingMaterial = new THREE.MeshStandardMaterial({
       color: state.debugMode ? LOOP_BUILDING_DEBUG_COLOR : LOOP_BUILDING_NORMAL_COLOR,
+      roughness: 0.62,
+      metalness: 0.3,
+      envMapIntensity: 0.55,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.92,
       depthWrite: false
     });
     const loopBuilding = new THREE.Mesh(
@@ -920,6 +1110,143 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
         }
       });
       ground.userData.fadeMaterials = fadeMaterials;
+    }
+
+    // 海面: 島々の下に広がる水。波 (合成サイン波 + ノイズ) の法線でフレネル反射と
+    // 月の鏡面反射を描き、遠方は霧と同じ式でフェードして空に溶かす。
+    // ジオメトリは1枚板で、波はすべてフラグメントシェーダ側で計算する。
+    const waterUniforms = {
+      uTime: { value: 0 },
+      uScroll: { value: 0 },
+      uDeepColor: { value: new THREE.Color(tuning.WATER_DEEP_COLOR) },
+      uShallowColor: { value: new THREE.Color(tuning.WATER_SHALLOW_COLOR) },
+      uHorizonColor: { value: new THREE.Color(0xd49b72) },
+      uZenithColor: { value: new THREE.Color(0x1a2a60) },
+      uMoonPos: { value: moonGroup.position },
+      uMoonColor: { value: new THREE.Color(0xffeebb) },
+      uFogColor: { value: scene.fog.color.clone() },
+      uFogDensity: { value: scene.fog.density },
+      uWaveAmp: { value: tuning.WATER_WAVE_AMP },
+      uOpacity: { value: 1 }
+    };
+    const waterMaterial = new THREE.ShaderMaterial({
+      uniforms: waterUniforms,
+      transparent: true,
+      depthWrite: false,
+      vertexShader: /* glsl */ `
+        varying vec3 vWorld;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorld = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform float uScroll;
+        uniform float uFogDensity;
+        uniform float uWaveAmp;
+        uniform float uOpacity;
+        uniform vec3 uDeepColor;
+        uniform vec3 uShallowColor;
+        uniform vec3 uHorizonColor;
+        uniform vec3 uZenithColor;
+        uniform vec3 uMoonPos;
+        uniform vec3 uMoonColor;
+        uniform vec3 uFogColor;
+        varying vec3 vWorld;
+
+        // sin ベースのハッシュは座標が大きいと精度が破綻して格子模様になるため、
+        // sin を使わない Hoskins ハッシュ + 座標の事前折り返しで大座標でも均質にする。
+        float hash(vec2 p) {
+          p = mod(p, 1024.0);
+          vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+          p3 += dot(p3, p3.yzx + 33.33);
+          return fract((p3.x + p3.y) * p3.z);
+        }
+        float vnoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+            mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+            u.y
+          );
+        }
+        float waveHeight(vec2 p) {
+          float t = uTime;
+          float h = 0.0;
+          h += sin(p.x * 0.055 + t * 0.85) * 0.45;
+          h += sin((p.x * 0.5 + p.y) * 0.042 - t * 0.62) * 0.34;
+          h += sin((p.y * 0.9 - p.x * 0.3) * 0.105 + t * 1.25) * 0.18;
+          h += vnoise(p * 0.11 + vec2(t * 0.16, -t * 0.12)) * 0.6;
+          h += vnoise(p * 0.42 + vec2(-t * 0.28, t * 0.2)) * 0.24;
+          return h * uWaveAmp;
+        }
+        void main() {
+          vec2 p = vec2(vWorld.x, vWorld.z - uScroll);
+          float eps = 0.9;
+          float h0 = waveHeight(p);
+          float hx = waveHeight(p + vec2(eps, 0.0));
+          float hz = waveHeight(p + vec2(0.0, eps));
+          vec3 normal = normalize(vec3(h0 - hx, eps, h0 - hz));
+          vec3 viewDir = normalize(cameraPosition - vWorld);
+          float fresnel = pow(1.0 - clamp(dot(viewDir, normal), 0.0, 1.0), 3.0);
+          fresnel = clamp(fresnel, 0.05, 1.0);
+          vec3 skyReflect = mix(uZenithColor, uHorizonColor, pow(fresnel, 0.7));
+          float depthMix = vnoise(p * 0.02) * 0.55;
+          vec3 waterBody = mix(uDeepColor, uShallowColor, depthMix);
+          vec3 col = mix(waterBody, skyReflect, fresnel * 0.85);
+          vec3 reflectDir = reflect(-viewDir, normal);
+          vec3 moonDir = normalize(uMoonPos - vWorld);
+          float moonAlign = max(dot(reflectDir, moonDir), 0.0);
+          float spec = pow(moonAlign, 240.0);
+          float glitter = pow(moonAlign, 26.0) * (0.3 + 0.7 * vnoise(p * 1.6 + vec2(uTime * 1.3, -uTime)));
+          col += uMoonColor * (spec * 1.7 + glitter * 0.38);
+          float dist = length(cameraPosition - vWorld);
+          float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
+          col = mix(col, uFogColor, fogFactor * 0.65);
+          float alpha = uOpacity * (1.0 - fogFactor);
+          gl_FragColor = vec4(col, alpha);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `
+    });
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(4000, 2400), waterMaterial);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(0, tuning.WATER_LEVEL_Y, -600);
+    water.renderOrder = -2; // 透明パスの最初に描き、島や雲が上に重なるようにする。
+    scene.add(water);
+
+    const waterColorTmp = new THREE.Color();
+    function updateWater(high) {
+      const u = waterUniforms;
+      const snow = state.snowSkyFactor;
+      u.uFogColor.value.copy(scene.fog.color);
+      u.uFogDensity.value = scene.fog.density;
+      u.uDeepColor.value
+        .setHex(state.redMoon ? tuning.WATER_DEEP_COLOR_RED_MOON : tuning.WATER_DEEP_COLOR)
+        .lerp(waterColorTmp.setHex(tuning.WATER_DEEP_COLOR_SNOW), snow)
+        .multiplyScalar(1 - high * 0.85);
+      u.uShallowColor.value
+        .setHex(state.redMoon ? tuning.WATER_SHALLOW_COLOR_RED_MOON : tuning.WATER_SHALLOW_COLOR)
+        .lerp(waterColorTmp.setHex(tuning.WATER_SHALLOW_COLOR_SNOW), snow)
+        .multiplyScalar(1 - high * 0.85);
+      u.uHorizonColor.value
+        .set(redMoonBaseSky ? "#8d383d" : "#d49b72")
+        .lerp(waterColorTmp.set("#c5bcc0"), snow)
+        .multiplyScalar(1 - high);
+      u.uZenithColor.value
+        .set(redMoonBaseSky ? "#151848" : "#1a2a60")
+        .lerp(waterColorTmp.set("#324270"), snow)
+        .multiplyScalar(1 - high * 0.9);
+      u.uMoonColor.value
+        .setHex(state.redMoon ? 0xff8678 : 0xffeebb)
+        .multiplyScalar(THREE.MathUtils.lerp(0.8, 1.3, high));
+      u.uWaveAmp.value = THREE.MathUtils.lerp(tuning.WATER_WAVE_AMP, tuning.WATER_WAVE_AMP_SNOW, snow);
+      u.uOpacity.value = THREE.MathUtils.lerp(1, 0.35, high);
     }
 
     for (let i = 0; i < 36; i += 1) {
@@ -1385,12 +1712,15 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       tuning.PICKUP_RING_RADIAL_SEGMENTS,
       tuning.PICKUP_RING_TUBULAR_SEGMENTS
     );
-    const pickupMat = new THREE.MeshPhongMaterial({
-      color: 0xffe0a8,
-      emissive: 0xfff4d6,
-      emissiveIntensity: 0.32,
-      specular: 0xffffff,
-      shininess: 170,
+    // 金属ゴールドの実在感: metalness=1 + 環境マップ反射で「磨かれた金の輪」にする。
+    // 視認性はエミッシブと各リングの PointLight が引き続き担保する。
+    const pickupMat = new THREE.MeshStandardMaterial({
+      color: 0xffce7a,
+      emissive: 0xffe9b8,
+      emissiveIntensity: 0.3,
+      metalness: 1.0,
+      roughness: 0.24,
+      envMapIntensity: 1.5,
       fog: false,
       depthTest: false,
       toneMapped: false
@@ -2001,6 +2331,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       audio.resetEmptyBoostLatch();
       state.trailSpawnCarry = 0;
       state.atmosphereSparkCarry = 0;
+      waterUniforms.uScroll.value = 0; // 長時間プレイで座標が育ち精度が落ちるのを防ぐ。
       state.rainbowTimer = 0;
       state.rainbowQueue = 0;
       state.lastRing = { x: 0, y: 26 };
@@ -2284,6 +2615,8 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     }
 
     function stepWorld(forward) {
+      // 波の模様を島と同じ速度で手前に流し、海が世界と一緒に動いて見えるようにする。
+      waterUniforms.uScroll.value += forward * 0.4;
       for (const item of loopingClouds) {
         item.position.z += forward;
         if (item.position.z > 18) item.position.z -= tuning.CLOUD_WRAP_DISTANCE;
@@ -2548,12 +2881,18 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       sun.intensity = THREE.MathUtils.lerp(1.2, 0.28, high);
       moonDisk.material.opacity = THREE.MathUtils.lerp(0.34, 0.92, high);
       moonGlow.material.opacity = THREE.MathUtils.lerp(0.55, 1, high);
-      starMat.opacity = THREE.MathUtils.lerp(0.68, 1, high);
+      starMat.opacity = THREE.MathUtils.lerp(0.72, 1, high);
+      starBrightMat.opacity = THREE.MathUtils.lerp(0.8, 1, high);
       if (Math.abs(high - lastSkyHigh) > 0.01 || Math.abs(state.snowSkyFactor - lastSnowSkyFactor) > 0.005) {
         skyTexture.userData.drawSky(high, state.snowSkyFactor);
         lastSkyHigh = high;
         lastSnowSkyFactor = state.snowSkyFactor;
       }
+      // 環境マップは PMREM 生成コストがあるので、空が大きく変わった時だけ作り直す。
+      if (Math.abs(high - lastEnvHigh) > 0.12 || Math.abs(state.snowSkyFactor - lastEnvSnow) > 0.3) {
+        refreshEnvironment(high, state.snowSkyFactor);
+      }
+      updateWater(high);
     }
 
     function updateBoostState(dt) {
@@ -2755,6 +3094,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       }
       updateInput();
       stars.rotation.y = Math.sin(clock.elapsedTime * 0.05) * 0.015;
+      waterUniforms.uTime.value = clock.elapsedTime;
       updateClouds(dt);
       const high = altitudeFactor();
       updateSkyAtmosphere(dt, high);
