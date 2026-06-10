@@ -224,68 +224,91 @@
       return texture;
     }
 
+    // 雲: 多オクターブ値ノイズ (fbm) + ドメインワープをピクセル単位で描く。
+    // 楕円グラデーションの重ね合わせは輪郭が「CGの玉」になるため、フラクタルな縁と
+    // 内部の濃淡を持たせ、密度の縦勾配から雲頂の光/下面の影を擬似計算して立体感を出す。
+    // 楕円エンベロープで密度が外周に向かって必ず 0 になるので、端のぶつ切りも起きない。
+    function cloudHash(ix, iy, seed) {
+      let h = Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(seed, 1440662683);
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    }
+    function cloudNoise(x, y, seed) {
+      const ix = Math.floor(x);
+      const iy = Math.floor(y);
+      const fx = x - ix;
+      const fy = y - iy;
+      const ux = fx * fx * (3 - 2 * fx);
+      const uy = fy * fy * (3 - 2 * fy);
+      const a = cloudHash(ix, iy, seed);
+      const b = cloudHash(ix + 1, iy, seed);
+      const c = cloudHash(ix, iy + 1, seed);
+      const d = cloudHash(ix + 1, iy + 1, seed);
+      return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+    }
+    function cloudFbm(x, y, seed) {
+      let v = 0;
+      let amp = 0.52;
+      let f = 1;
+      for (let o = 0; o < 4; o += 1) {
+        v += cloudNoise(x * f, y * f, seed + o * 101) * amp;
+        amp *= 0.5;
+        f *= 2.13;
+      }
+      return v;
+    }
+    // ピクセル走査はそれなりに重いので、起動時に数種類だけ生成して使い回す。
+    const cloudTexturePool = [];
+    const CLOUD_TEXTURE_VARIANTS = 12;
     function createCloudTexture() {
-      const cloud = document.createElement("canvas");
-      cloud.width = 512;
-      cloud.height = 192;
-      const ctx = cloud.getContext("2d");
-      ctx.clearRect(0, 0, cloud.width, cloud.height);
-
-      // 塊 (クラスタ) 単位でパフを重ね、下面に影・上面に月光のハイライトを入れて立体感を出す。
-      const clusters = 4 + Math.floor(Math.random() * 3);
-      for (let c = 0; c < clusters; c += 1) {
-        const ccx = 80 + Math.random() * 360;
-        const ccy = 76 + Math.random() * 44;
-        const clusterR = 46 + Math.random() * 64;
-        const puffs = 6 + Math.floor(Math.random() * 6);
-        for (let i = 0; i < puffs; i += 1) {
-          const px = ccx + (Math.random() - 0.5) * clusterR * 1.7;
-          const py = ccy + (Math.random() - 0.5) * clusterR * 0.5;
-          const rx = 22 + Math.random() * 44;
-          const ry = rx * (0.42 + Math.random() * 0.2);
-          let g = ctx.createRadialGradient(px, py + ry * 0.55, 0, px, py + ry * 0.55, rx);
-          g.addColorStop(0, "rgba(128, 110, 156, 0.26)");
-          g.addColorStop(1, "rgba(128, 110, 156, 0)");
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.ellipse(px, py + ry * 0.55, rx, ry, 0, 0, Math.PI * 2);
-          ctx.fill();
-          g = ctx.createRadialGradient(px, py, 0, px, py, rx);
-          g.addColorStop(0, "rgba(255, 226, 206, 0.46)");
-          g.addColorStop(0.6, "rgba(235, 194, 198, 0.24)");
-          g.addColorStop(1, "rgba(235, 194, 198, 0)");
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2);
-          ctx.fill();
-          g = ctx.createRadialGradient(px, py - ry * 0.5, 0, px, py - ry * 0.5, rx * 0.7);
-          g.addColorStop(0, "rgba(255, 246, 228, 0.34)");
-          g.addColorStop(1, "rgba(255, 246, 228, 0)");
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.ellipse(px, py - ry * 0.5, rx * 0.7, ry * 0.6, 0, 0, Math.PI * 2);
-          ctx.fill();
+      if (cloudTexturePool.length >= CLOUD_TEXTURE_VARIANTS) {
+        return cloudTexturePool[Math.floor(Math.random() * cloudTexturePool.length)];
+      }
+      const W = 256;
+      const H = 96;
+      const seed = Math.floor(Math.random() * 2 ** 31);
+      const stretch = 2.8 + Math.random() * 1.6;
+      const density = new Float32Array(W * H);
+      for (let y = 0; y < H; y += 1) {
+        for (let x = 0; x < W; x += 1) {
+          const nx = x / W;
+          const ny = y / H;
+          const ex = (nx - 0.5) * 2;
+          const ey = (ny - 0.5) * 2;
+          const envelope = Math.max(0, 1 - (ex * ex + ey * ey * 1.35));
+          if (envelope <= 0) continue;
+          const warp = cloudFbm(nx * 2.4 + 19.7, ny * 4.8, seed ^ 0x9e3779) * 0.9;
+          const dd = cloudFbm(nx * stretch + warp, ny * 3.4 + warp * 0.55, seed);
+          density[y * W + x] = THREE.MathUtils.clamp((dd - 0.34) * 2.4, 0, 1) * envelope;
         }
       }
-
-      // パフがキャンバス端にはみ出すと縁がぶつっと直線で切れるので、
-      // 外周へ向かってアルファを落とす楕円マスクで必ず溶けるようにする。
-      ctx.globalCompositeOperation = "destination-in";
-      ctx.save();
-      ctx.scale(1, cloud.height / cloud.width);
-      const edgeMask = ctx.createRadialGradient(
-        cloud.width / 2, cloud.width / 2, 0,
-        cloud.width / 2, cloud.width / 2, cloud.width / 2
-      );
-      edgeMask.addColorStop(0.62, "rgba(0,0,0,1)");
-      edgeMask.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = edgeMask;
-      ctx.fillRect(0, 0, cloud.width, cloud.width);
-      ctx.restore();
-      ctx.globalCompositeOperation = "source-over";
-
+      const cloud = document.createElement("canvas");
+      cloud.width = W;
+      cloud.height = H;
+      const ctx = cloud.getContext("2d");
+      const img = ctx.createImageData(W, H);
+      const data = img.data;
+      const litColor = [255, 236, 220];
+      const shadeColor = [152, 134, 172];
+      for (let y = 0; y < H; y += 1) {
+        for (let x = 0; x < W; x += 1) {
+          const i = y * W + x;
+          const dHere = density[i];
+          if (dHere <= 0.004) continue;
+          const dUp = density[Math.max(0, y - 2) * W + x];
+          // 上方が薄い (=雲頂に近い) ピクセルほど月光で明るく、厚みの下ほど影色に。
+          const light = THREE.MathUtils.clamp(0.55 + (dHere - dUp) * 2.2 + (0.5 - y / H) * 0.3, 0, 1);
+          const o = i * 4;
+          data[o] = Math.round(shadeColor[0] + (litColor[0] - shadeColor[0]) * light);
+          data[o + 1] = Math.round(shadeColor[1] + (litColor[1] - shadeColor[1]) * light);
+          data[o + 2] = Math.round(shadeColor[2] + (litColor[2] - shadeColor[2]) * light);
+          data[o + 3] = Math.round(Math.min(1, dHere * 1.3) * 255);
+        }
+      }
+      ctx.putImageData(img, 0, 0);
       const texture = new THREE.CanvasTexture(cloud);
       texture.colorSpace = THREE.SRGBColorSpace;
+      cloudTexturePool.push(texture);
       return texture;
     }
 
@@ -890,7 +913,7 @@
 
     const land = new THREE.Mesh(
       new THREE.CircleGeometry(80, 96),
-      new THREE.MeshStandardMaterial({ color: 0x24493f, map: terrainTexture, roughness: 0.95, metalness: 0, envMapIntensity: 0.3, transparent: true, opacity: 0.78, depthWrite: false, alphaMap: islandEdgeAlphaTex })
+      new THREE.MeshStandardMaterial({ color: 0x24493f, map: terrainTexture, roughness: 0.95, metalness: 0, envMapIntensity: 0.3, transparent: true, opacity: 0.96, depthWrite: false, alphaMap: islandEdgeAlphaTex })
     );
     land.rotation.x = -Math.PI / 2;
     land.scale.set(1.6, 0.95, 1);
@@ -1037,7 +1060,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     }
     const forestCarpet = new THREE.Mesh(
       new THREE.CircleGeometry(54, 48),
-      new THREE.MeshStandardMaterial({ color: 0x142e21, map: terrainTexture, roughness: 0.95, metalness: 0, envMapIntensity: 0.3, transparent: true, opacity: 0.62, depthWrite: false, alphaMap: islandEdgeAlphaTex })
+      new THREE.MeshStandardMaterial({ color: 0x142e21, map: terrainTexture, roughness: 0.95, metalness: 0, envMapIntensity: 0.3, transparent: true, opacity: 0.9, depthWrite: false, alphaMap: islandEdgeAlphaTex })
     );
     forestCarpet.rotation.x = -Math.PI / 2;
     forestCarpet.scale.set(1.6, 0.9, 1);
@@ -1089,8 +1112,9 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       mctx.fillRect(0, 0, cw, wallTop);
       const cellW = cw / cols;
       const cellH = (ch - wallTop) / rows;
-      const mx = cellW * 0.22;
-      const my = cellH * 0.26;
+      // 窓サイズはループ数字ビルの板ポリ窓 (セル幅の約34% × 高さの約32%) に合わせる。
+      const mx = cellW * 0.33;
+      const my = cellH * 0.34;
       for (let cx = 0; cx < cols; cx += 1) {
         for (let ry = 0; ry < rows; ry += 1) {
           const px = cx * cellW + mx;
@@ -1181,8 +1205,9 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
       cv.width = cv.height = size;
       const ctx = cv.getContext("2d");
       const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-      grad.addColorStop(0, "#ffffff");
-      grad.addColorStop(0.45, "#b0b0b0");
+      grad.addColorStop(0, "#e6e6e6");
+      grad.addColorStop(0.4, "#8a8a8a");
+      grad.addColorStop(0.75, "#2c2c2c");
       grad.addColorStop(1, "#000000");
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, size, size);
@@ -1193,7 +1218,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     const buildingAoQuads = [];
     const cityPlaza = new THREE.Mesh(
       new THREE.CircleGeometry(34, 36),
-      new THREE.MeshStandardMaterial({ color: 0x141a2c, map: terrainTexture, roughness: 0.78, metalness: 0.08, envMapIntensity: 0.4, transparent: true, opacity: 0.78, depthWrite: false })
+      new THREE.MeshStandardMaterial({ color: 0x141a2c, map: terrainTexture, roughness: 0.78, metalness: 0.08, envMapIntensity: 0.4, transparent: true, opacity: 0.94, depthWrite: false, alphaMap: islandEdgeAlphaTex })
     );
     cityPlaza.rotation.x = -Math.PI / 2;
     cityPlaza.scale.set(1.4, 1.0, 1);
@@ -1234,7 +1259,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     }
     const cityAo = new THREE.Mesh(
       mergeGeometries(buildingAoQuads),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, alphaMap: buildingAoTexture })
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38, depthWrite: false, alphaMap: buildingAoTexture })
     );
     ground.add(cityAo);
 
