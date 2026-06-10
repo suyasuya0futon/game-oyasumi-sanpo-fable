@@ -388,22 +388,64 @@
       glowCanvas.width = size;
       glowCanvas.height = size;
       const ctx = glowCanvas.getContext("2d");
+      // アンカー点 (位置・明るさ・色) は従来の手打ちストップと完全に同じ。
+      // アンカー間の補間だけを直線からエルミート曲線にして、22% / 55% 位置の
+      // 折れ目が輪として見えるのを防ぐ。明るさと広がりは変わらない。
       const red = kind === "red";
-      const stops = red
+      const anchors = red
         ? [
-          [0, "rgba(255, 184, 172, 0.95)"],
-          [0.22, "rgba(230, 72, 82, 0.62)"],
-          [0.55, "rgba(230, 72, 82, 0.26)"],
-          [1, "rgba(230, 72, 82, 0)"]
+          [0, 0.95, [255, 184, 172]],
+          [0.22, 0.62, [230, 72, 82]],
+          [0.55, 0.26, [230, 72, 82]],
+          [1, 0, [230, 72, 82]]
         ]
         : [
-          [0, "rgba(255, 240, 130, 0.95)"],
-          [0.22, "rgba(255, 224, 90, 0.62)"],
-          [0.55, "rgba(255, 210, 60, 0.26)"],
-          [1, "rgba(255, 210, 60, 0)"]
+          [0, 0.95, [255, 240, 130]],
+          [0.22, 0.62, [255, 224, 90]],
+          [0.55, 0.26, [255, 210, 60]],
+          [1, 0, [255, 210, 60]]
         ];
+      // 各アンカーの接線 = 前後区間の傾きの平均 (端は隣接区間の傾き)。データは単調減少。
+      const slopes = [];
+      for (let i = 0; i < anchors.length - 1; i += 1) {
+        slopes.push((anchors[i + 1][1] - anchors[i][1]) / (anchors[i + 1][0] - anchors[i][0]));
+      }
+      const tangents = anchors.map((a, i) => {
+        if (i === 0) return slopes[0];
+        if (i === anchors.length - 1) return slopes[slopes.length - 1];
+        return (slopes[i - 1] + slopes[i]) / 2;
+      });
+      const glowAlpha = (t) => {
+        let s = anchors.length - 2;
+        for (let k = 0; k < anchors.length - 1; k += 1) {
+          if (t <= anchors[k + 1][0]) { s = k; break; }
+        }
+        const [t0, a0] = anchors[s];
+        const [t1, a1] = anchors[s + 1];
+        const span = t1 - t0;
+        const u = (t - t0) / span;
+        const u2 = u * u;
+        const u3 = u2 * u;
+        return Math.max(0, (2 * u3 - 3 * u2 + 1) * a0 + (u3 - 2 * u2 + u) * span * tangents[s]
+          + (-2 * u3 + 3 * u2) * a1 + (u3 - u2) * span * tangents[s + 1]);
+      };
+      const glowColor = (t) => {
+        let s = anchors.length - 2;
+        for (let k = 0; k < anchors.length - 1; k += 1) {
+          if (t <= anchors[k + 1][0]) { s = k; break; }
+        }
+        const [t0, , c0] = anchors[s];
+        const [t1, , c1] = anchors[s + 1];
+        const u = (t - t0) / (t1 - t0);
+        return c0.map((v, i) => Math.round(v + (c1[i] - v) * u));
+      };
       const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.12, size / 2, size / 2, size * 0.5);
-      for (const [stop, color] of stops) g.addColorStop(stop, color);
+      const GLOW_STOPS = 30;
+      for (let i = 0; i <= GLOW_STOPS; i += 1) {
+        const t = i / GLOW_STOPS;
+        const [cr, cg, cb] = glowColor(t);
+        g.addColorStop(t, `rgba(${cr}, ${cg}, ${cb}, ${glowAlpha(t).toFixed(4)})`);
+      }
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, size, size);
       const texture = new THREE.CanvasTexture(glowCanvas);
