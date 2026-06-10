@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>OyasumiSanpo</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+
+  <meta name="description" content="薄暗い夕暮れから星空へ、光のリングをくぐりながら静かに浮遊する空の散歩。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://oyasumi-sanpo.vercel.app/">
+  <meta property="og:site_name" content="OyasumiSanpo">
+  <meta property="og:title" content="OyasumiSanpo">
+  <meta property="og:description" content="薄暗い夕暮れから星空へ、光のリングをくぐりながら静かに浮遊する空の散歩。">
+  <meta property="og:image" content="https://oyasumi-sanpo.vercel.app/preview.png?v=20260527">
+  <meta property="og:image:secure_url" content="https://oyasumi-sanpo.vercel.app/preview.png?v=20260527">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="600">
+  <meta property="og:image:alt" content="OyasumiSanpoの星空を浮遊するゲーム画面">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="OyasumiSanpo">
+  <meta name="twitter:description" content="薄暗い夕暮れから星空へ、光のリングをくぐりながら静かに浮遊する空の散歩。">
+  <meta name="twitter:image" content="https://oyasumi-sanpo.vercel.app/preview.png?v=20260527">
+  <meta name="twitter:image:alt" content="OyasumiSanpoの星空を浮遊するゲーム画面">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400;700;900&family=Noto+Sans:wght@400;500;700&family=Noto+Serif+JP:wght@400;500;700&family=Press+Start+2P&family=Rochester&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="OyasumiSanpo 3D floating scene"></canvas>
+
+  <main class="hud">
+    <section class="topbar" aria-live="polite">
+      <div class="meter">
+        <strong id="score">SCORE:0</strong>
+        <span id="debugInfo" class="debug-info" hidden></span>
+        <span id="debugStats" class="debug-info" hidden></span>
+        <span id="debugAuto" class="debug-info" hidden></span>
+      </div>
+      <div class="dev-auth" id="devAuth" hidden>
+        <form class="dev-auth-form" id="devAuthForm">
+          <button type="submit" id="devAuthSubmit" aria-label="GitHubでログイン">
+            <svg class="dev-auth-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+            <span class="dev-auth-badge" id="devAuthBadge" hidden>✦</span>
+          </button>
+        </form>
+        <div class="dev-auth-error" id="devAuthError" hidden></div>
+      </div>
+      <button class="ranking-button" id="openRankingTop" aria-label="ランキングを見る">
+        <svg class="rank-crown" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 8l4 3 5-6 5 6 4-3-2 11H5L3 8zm2 12h14v2H5v-2z"/></svg>
+      </button>
+      <button class="help" id="help" aria-label="遊び方">？</button>
+    </section>
+
+    <section class="center" id="menu">
+      <h1>OyasumiSanpo</h1>
+      <p class="lead">薄暗い夕暮れから星空へ、光のリングをくぐりながら<br>静かに浮遊する空の散歩です。</p>
+      <div class="result-rank-entry" id="resultRankEntry" hidden>
+        <div class="result-score result-rank" id="resultRank" hidden></div>
+      </div>
+      <strong class="result-score" id="resultScore">SCORE:0</strong>
+      <div class="share">
+        <span class="share-label">スコアを投稿する</span>
+        <a class="share-link" id="xShare" target="_blank" rel="noopener" aria-label="Xに投稿する">
+          <svg class="credits-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z"/></svg>
+        </a>
+      </div>
+      <div class="actions">
+        <button class="primary" id="reopenRanking" hidden>
+          <svg class="rank-crown" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 8l4 3 5-6 5 6 4-3-2 11H5L3 8zm2 12h14v2H5v-2z"/></svg>
+          RANKING
+        </button>
+        <button class="primary" id="start">START</button>
+      </div>
+      <label class="bgm-toggle">
+        <input type="checkbox" id="bgmToggle" checked>
+        音を出す(ON推奨)
+      </label>
+    </section>
+
+    <section class="bottom">
+      <button class="sound" id="sound" aria-label="Sound on">♫</button>
+    </section>
+  </main>
+
+  <div class="touch" aria-hidden="true">
+    <div class="stick" id="stick"><div class="knob" id="knob"></div></div>
+    <button class="boost" id="touchBoost" aria-label="Space boost">BOOST</button>
+  </div>
+
+  <div class="flash" id="flash"></div>
+
+  <div class="pause-overlay" id="pauseOverlay" hidden>
+    <div>
+      <div class="pause-title">PAUSE</div>
+      <div class="pause-sub">PRESS ANY KEY</div>
+    </div>
+  </div>
+
+  <div class="ranking-overlay" id="rankingOverlay" hidden>
+    <button class="help help-close" id="rankingClose" aria-label="閉じる">✖︎</button>
+    <div class="ranking-content">
+      <h2 id="rankingTitle">
+        <svg class="rank-crown" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 8l4 3 5-6 5 6 4-3-2 11H5L3 8zm2 12h14v2H5v-2z"/></svg>
+        RANKING
+      </h2>
+      <div class="ranking-message" id="rankingMessage" hidden></div>
+      <table class="ranking-table">
+        <thead>
+          <tr><th>RANK</th><th>SCORE</th><th>LOOP</th><th>NAME</th></tr>
+        </thead>
+        <tbody id="rankingTableBody"></tbody>
+      </table>
+      <div class="ranking-action" id="rankingAction" hidden>
+        <button class="primary name-submit" id="rankingSubmitName">OK</button>
+        <div class="name-error" id="rankingNameError" hidden></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="help-overlay" id="helpOverlay" hidden>
+    <button class="help help-close" id="helpClose" aria-label="閉じる">✖︎</button>
+    <div class="help-content">
+      <h2>遊び方</h2>
+      <div class="tips tips-keyboard">
+        移動=<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>または<kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd><br>
+        ブースト=<kbd>&nbsp;&nbsp;&nbsp;Space&nbsp;&nbsp;&nbsp;</kbd>　一時停止=<kbd>Esc</kbd>
+      </div>
+      <div class="tips tips-touch">
+        <div class="tips-touch-controls">
+          <span><span class="stick"><span class="knob"></span></span><br>スティックで移動</span>
+          <span>|</span>
+          <span><span class="boost">BOOST</span><br>加速</span>
+        </div>
+        <label class="touch-swap-toggle">
+          <input type="checkbox" id="touchSwap">
+          左右の配置を反転
+        </label>
+      </div>
+      <p id="helpContent"></p>
+      <div class="credits">
+        <small>© 2026 suyasuya0futon</small>
+        <div class="credits-icons">
+          <a href="https://x.com/suyasuya0futon" target="_blank" rel="noopener" aria-label="X (@suyasuya0futon)">
+            <svg class="credits-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z"/></svg>
+          </a>
+          <a href="https://github.com/suyasuya0futon" target="_blank" rel="noopener" aria-label="GitHub (@suyasuya0futon)">
+            <svg class="credits-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="help-notes">
+        <p><strong>動作確認環境</strong>: Chrome / Edge（デスクトップ）、Chrome / Safari（iPhone SE / iPhone 17）。端末によっては動作が重くなることがあります。なお、本ゲームは個人が無償で公開しており、トラブルについては一切の責任を負いません。</p>
+        <p><strong>プライバシー</strong>: アクセス状況の把握に Vercel Web Analytics を利用しています（Cookieは不使用）。ランキング投稿時、スコア・ループ数・表示名・投稿日時を保存します。</p>
+      </div>
+    </div>
+  </div>
+
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
