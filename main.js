@@ -355,6 +355,42 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.95;
 
+    // === リアル版(実験) ===
+    // tuning.QUALITY.REALISTIC が true のとき、木や地面を受光マテリアル(MeshStandardMaterial)化し、
+    // 夜空の色をベースにした環境マップ(IBL)を scene.environment に焼き込む。
+    // RoomEnvironment 等の外部 jsm は bare import 解決が必要なので使わず、Canvas グラデーションから自前で生成する。
+    // これだけで陰影と柔らかい反射が出て立体感が大きく上がる。負荷が上がるので低スペック端末は tuning 側で false に。
+    const REALISTIC = !!(tuning.QUALITY && tuning.QUALITY.REALISTIC);
+    if (REALISTIC) {
+      const envCv = document.createElement("canvas");
+      envCv.width = 16;
+      envCv.height = 256;
+      const ectx = envCv.getContext("2d");
+      const eg = ectx.createLinearGradient(0, 0, 0, 256);
+      eg.addColorStop(0.0, "#0a1230"); // 天頂: 暗い夜空の青
+      eg.addColorStop(0.5, "#2a2f55");
+      eg.addColorStop(0.78, "#6a5a6a"); // 地平: 夕暮れのくすんだ明るさ
+      eg.addColorStop(1.0, "#16121f"); // 地面側: 暗く落とす
+      ectx.fillStyle = eg;
+      ectx.fillRect(0, 0, envCv.width, envCv.height);
+      const envTex = new THREE.CanvasTexture(envCv);
+      envTex.mapping = THREE.EquirectangularReflectionMapping;
+      envTex.colorSpace = THREE.SRGBColorSpace;
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromEquirectangular(envTex).texture;
+      scene.environmentIntensity = tuning.QUALITY.ENV_INTENSITY;
+      envTex.dispose();
+      pmrem.dispose();
+    }
+
+    // リアル版マテリアル生成ヘルパー。OFF 時は従来の MeshBasicMaterial(無光)へ完全フォールバックする。
+    const makeFoliageMat = (c) => REALISTIC
+      ? new THREE.MeshStandardMaterial({ color: c, roughness: tuning.QUALITY.TREE_ROUGHNESS, metalness: 0 })
+      : new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.78, depthWrite: false });
+    const makeGroundMat = (opts) => REALISTIC
+      ? new THREE.MeshStandardMaterial({ ...opts, roughness: tuning.QUALITY.GROUND_ROUGHNESS, metalness: 0 })
+      : new THREE.MeshBasicMaterial(opts);
+
     const clock = new THREE.Clock();
     const lowFogColor = new THREE.Color(0x253056);
     const lowFogColorSnow = new THREE.Color(0x6a7383);
@@ -685,7 +721,7 @@
 
     const land = new THREE.Mesh(
       new THREE.CircleGeometry(80, 96),
-      new THREE.MeshBasicMaterial({ color: 0x1c3b33, transparent: true, opacity: 0.7, depthWrite: false, alphaMap: islandEdgeAlphaTex })
+      makeGroundMat({ color: 0x1c3b33, transparent: true, opacity: 0.7, depthWrite: false, alphaMap: islandEdgeAlphaTex })
     );
     land.rotation.x = -Math.PI / 2;
     land.scale.set(1.6, 0.95, 1);
@@ -695,10 +731,11 @@
 
 const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     const forestSnowPalette = [0xdfe6e2, 0xe6ece8, 0xd4dcd7, 0xeef2f0, 0xc9d2cc];
-    const forestMats = forestPalette.map((c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.78, depthWrite: false }));
-    const coneGeoA = new THREE.ConeGeometry(1.0, 3.6, 7);
-    const coneGeoB = new THREE.ConeGeometry(0.7, 4.6, 6);
-    const canopyGeo = new THREE.SphereGeometry(1.1, 9, 7);
+    const forestMats = forestPalette.map((c) => makeFoliageMat(c));
+    // リアル版では分割数を上げて滑らかな陰影を出す(ジオメトリは全木で共有なのでコスト増は小さい)。
+    const coneGeoA = new THREE.ConeGeometry(1.0, 3.6, REALISTIC ? 14 : 7);
+    const coneGeoB = new THREE.ConeGeometry(0.7, 4.6, REALISTIC ? 12 : 6);
+    const canopyGeo = new THREE.SphereGeometry(1.1, REALISTIC ? 16 : 9, REALISTIC ? 12 : 7);
     function placeTree(x, z) {
       const variant = Math.random();
       const mat = forestMats[Math.floor(Math.random() * forestMats.length)];
@@ -722,7 +759,7 @@ const forestPalette = [0x173326, 0x1f4434, 0x2a563f, 0x12281d, 0x365e3c];
     }
     const forestCarpet = new THREE.Mesh(
       new THREE.CircleGeometry(54, 48),
-      new THREE.MeshBasicMaterial({ color: 0x10261b, transparent: true, opacity: 0.55, depthWrite: false, alphaMap: islandEdgeAlphaTex })
+      makeGroundMat({ color: 0x10261b, transparent: true, opacity: 0.55, depthWrite: false, alphaMap: islandEdgeAlphaTex })
     );
     forestCarpet.rotation.x = -Math.PI / 2;
     forestCarpet.scale.set(1.6, 0.9, 1);

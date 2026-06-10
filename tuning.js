@@ -1,6 +1,17 @@
 // デバッグ設定
 export const DEBUG_MODE = false; // true なら起動時からデバッグモード。通常は？ボタン長押しで切り替える。
 
+// 画質（リアル版・実験中）
+// REALISTIC を true にすると、木と地面（森・草地の島）を受光マテリアル(MeshStandardMaterial)へ切り替え、
+// 夜空の色をベースにした環境マップ(IBL)を焼き込んで陰影と質感を出す。立体感が大きく上がる代わりに GPU 負荷も増える。
+// カクつく端末では false に戻すと、元のフラット(MeshBasicMaterial)表示へ完全に戻る。Opus版↔Fable5版の比較もこのスイッチで揃える。
+export const QUALITY = {
+  REALISTIC: true,        // リアル版のマスタースイッチ。false で従来表示。
+  ENV_INTENSITY: 0.4,     // 環境マップ(IBL)の明るさ。夜景なので控えめ。上げると全体が明るく艶やかに、下げると締まった暗さになる。
+  TREE_ROUGHNESS: 0.85,   // 木の表面のざらつき(1=完全マット, 0=鏡面寄り)。
+  GROUND_ROUGHNESS: 0.95, // 地面のざらつき。
+};
+
 // 赤い月イベント
 export const RED_MOON_CHANCE = 0.02; // 通常プレイでゲーム開始時に赤い月になる確率。
 export const RED_MOON_DEBUG_CHANCE = 0.6; // デバッグモードでは確認しやすいよう高確率にする。
