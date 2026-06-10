@@ -65,6 +65,14 @@
 
     let devAuthUiSeq = 0;
     let devAuthSession = null;
+    let devModeRequested = false;
+
+    function getDevRedirectUrl() {
+      const url = new URL(window.location.href);
+      url.hash = "";
+      url.searchParams.set("dev", "");
+      return url.toString().replace("?dev=", "?dev");
+    }
 
     async function setDevAuthUi(session) {
       const seq = ++devAuthUiSeq;
@@ -77,27 +85,29 @@
       devAuthError.hidden = true;
       devAuthError.textContent = "";
       if (!signedIn) {
-        setDebugMode(tuning.DEBUG_MODE);
+        setDebugMode(tuning.DEBUG_MODE || devModeRequested);
         return;
       }
       try {
         const isDeveloper = await getDeveloperStatus();
         if (seq === devAuthUiSeq) {
           devAuthBadge.hidden = !isDeveloper;
-          setDebugMode(tuning.DEBUG_MODE || isDeveloper);
+          setDebugMode(tuning.DEBUG_MODE || devModeRequested || isDeveloper);
         }
       } catch (e) {
         console.warn("開発者権限を確認できません", e);
         if (seq === devAuthUiSeq) {
           devAuthError.textContent = "status error";
           devAuthError.hidden = false;
-          setDebugMode(tuning.DEBUG_MODE);
+          setDebugMode(tuning.DEBUG_MODE || devModeRequested);
         }
       }
     }
 
     async function initDevAuth(urlParams) {
       if (!urlParams.has("dev")) return;
+      devModeRequested = true;
+      setDebugMode(true);
       devAuth.hidden = false;
       try {
         await setDevAuthUi(await getDeveloperSession());
@@ -118,7 +128,7 @@
           await signOutDeveloper();
           await setDevAuthUi(null);
         } else {
-          await signInDeveloper(`${window.location.origin}${window.location.pathname}?dev`);
+          await signInDeveloper(getDevRedirectUrl());
         }
       } catch (e) {
         console.warn("開発者ログイン操作に失敗", e);
